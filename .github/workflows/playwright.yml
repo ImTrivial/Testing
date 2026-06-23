@@ -5,21 +5,38 @@ on:
     - cron: "01,31 * * * *"
 jobs:
   test:
-    timeout-minutes: 10
+    timeout-minutes: 15 
     runs-on: ubuntu-22.04
     steps:
     - uses: actions/checkout@v4
-    - uses: actions/cache@v4
-      with:
-        path: ~/.cache/ms-playwright
-        key: ${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
+
     - uses: actions/setup-node@v4
       with:
-        node-version: lts/*
+        node-version: '22'
+
     - name: Install dependencies
       run: npm ci
+      
+    - name: Get Playwright version
+      id: pw-version
+      run: echo "version=$(npx playwright --version | awk '{print $2}')" >> $GITHUB_OUTPUT
+
+    - uses: actions/cache@v4
+      id: playwright-cache
+      with:
+        path: ~/.cache/ms-playwright
+        key: ${{ runner.os }}-playwright-${{ steps.pw-version.outputs.version }}
+
+    - name: Disable Man-DB Auto-Update
+      run: |
+        sudo debconf-set-selections <<< "man-db man-db/auto-update boolean false"
+        sudo dpkg-reconfigure man-db
+
     - name: Install Playwright Browsers
+      env:
+        NODE_OPTIONS: "--max-old-space-size=4096"
       run: npx playwright install --with-deps chromium
+
     - name: Create .env file
       run: |
         touch .env
@@ -30,11 +47,7 @@ jobs:
         echo "INCREASE_AIRLINE_REPUTATION=${{ vars.INCREASE_AIRLINE_REPUTATION }}" >> .env
         echo "CAMPAIGN_TYPE=${{ vars.CAMPAIGN_TYPE }}" >> .env
         echo "CAMPAIGN_DURATION=${{ vars.CAMPAIGN_DURATION }}" >> .env
+
     - name: Run Playwright tests
       run: npx playwright test
-    # - uses: actions/upload-artifact@v4
-    #   if: always()
-    #   with:
-    #     name: playwright-report
-    #     path: playwright-report/
-    #     retention-days: 1
+      
